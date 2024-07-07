@@ -8,9 +8,8 @@ import os
 import numpy as np
 import torch
 from torch.autograd import Variable
-#from tensorboardX import SummaryWriter
 import cv2
-#writer = SummaryWriter('runs/G1G2')
+
 SIZE = 320
 NC = 14
 
@@ -44,30 +43,30 @@ def generate_label_color(inputs):
 def complete_compose(img, mask, label):
     label = label.cpu().numpy()
     M_f = label > 0
-    M_f = M_f.astype(np.int)
+    M_f = M_f.astype(np.int64)
     M_f = torch.FloatTensor(M_f).cuda()
-    masked_img = img*(1-mask)
-    M_c = (1-mask.cuda())*M_f
-    M_c = M_c+torch.zeros(img.shape).cuda()  # broadcasting
+    masked_img = img * (1 - mask)
+    M_c = (1 - mask.cuda()) * M_f
+    M_c = M_c + torch.zeros(img.shape).cuda()  # broadcasting
     return masked_img, M_c, M_f
 
 
 def compose(label, mask, color_mask, edge, color, noise):
-    masked_label = label*(1-mask)
-    masked_edge = mask*edge
-    masked_color_strokes = mask*(1-color_mask)*color
-    masked_noise = mask*noise
+    masked_label = label * (1 - mask)
+    masked_edge = mask * edge
+    masked_color_strokes = mask * (1 - color_mask) * color
+    masked_noise = mask * noise
     return masked_label, masked_edge, masked_color_strokes, masked_noise
 
 
 def changearm(old_label):
-    label = old_label
-    arm1 = torch.FloatTensor((old_label.cpu().numpy() == 11).astype(np.int))
-    arm2 = torch.FloatTensor((old_label.cpu().numpy() == 13).astype(np.int))
-    noise = torch.FloatTensor((old_label.cpu().numpy() == 7).astype(np.int))
-    label = label*(1-arm1)+arm1*4
-    label = label*(1-arm2)+arm2*4
-    label = label*(1-noise)+noise*4
+    label = old_label.clone()
+    arm1 = torch.FloatTensor((old_label.cpu().numpy() == 11).astype(np.int64))
+    arm2 = torch.FloatTensor((old_label.cpu().numpy() == 13).astype(np.int64))
+    noise = torch.FloatTensor((old_label.cpu().numpy() == 7).astype(np.int64))
+    label = label * (1 - arm1) + arm1 * 4
+    label = label * (1 - arm2) + arm2 * 4
+    label = label * (1 - noise) + noise * 4
     return label
 
 
@@ -83,24 +82,32 @@ def main():
     model = create_model(opt)
 
     for i, data in enumerate(dataset):
-
         # add gaussian noise channel
         # wash the label
         t_mask = torch.FloatTensor(
-            (data['label'].cpu().numpy() == 7).astype(np.float))
-        #
-        # data['label'] = data['label'] * (1 - t_mask) + t_mask * 4
+            (data['label'].cpu().numpy() == 7).astype(np.float64))
+
         mask_clothes = torch.FloatTensor(
-            (data['label'].cpu().numpy() == 4).astype(np.int))
+            (data['label'].cpu().numpy() == 4).astype(np.int64))
         mask_fore = torch.FloatTensor(
-            (data['label'].cpu().numpy() > 0).astype(np.int))
+            (data['label'].cpu().numpy() > 0).astype(np.int64))
         img_fore = data['image'] * mask_fore
         img_fore_wc = img_fore * mask_fore
         all_clothes_label = changearm(data['label'])
 
         ############## Forward Pass ######################
-        fake_image, warped_cloth, refined_cloth = model(Variable(data['label'].cuda()), Variable(data['edge'].cuda()), Variable(img_fore.cuda()), Variable(
-            mask_clothes.cuda()), Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()), Variable(data['image'].cuda()), Variable(data['pose'].cuda()), Variable(data['image'].cuda()), Variable(mask_fore.cuda()))
+        fake_image, warped_cloth, refined_cloth = model(
+            Variable(data['label'].cuda()), 
+            Variable(data['edge'].cuda()), 
+            Variable(img_fore.cuda()), 
+            Variable(mask_clothes.cuda()), 
+            Variable(data['color'].cuda()), 
+            Variable(all_clothes_label.cuda()), 
+            Variable(data['image'].cuda()), 
+            Variable(data['pose'].cuda()), 
+            Variable(data['image'].cuda()), 
+            Variable(mask_fore.cuda())
+        )
 
         # make output folders
         output_dir = os.path.join(opt.results_dir, opt.phase)
